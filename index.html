@@ -72,6 +72,13 @@
       margin-bottom: 8px;
     }
 
+    .session-app-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
     .session-url-link {
       display: block;
       font-size: 14px;
@@ -224,11 +231,25 @@
     }
 
     .btn-launch:disabled {
-      background: var(--accent-dim);
+      background: var(--surface2);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
       cursor: default;
+      font-weight: 600;
     }
 
     .btn-launch:not(:disabled):active { opacity: 0.75; }
+
+    .btn-open-session {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      background: var(--green);
+    }
+
+    .card-active {
+      border-color: var(--green);
+    }
 
     /* Launch state */
     .launch-status {
@@ -385,12 +406,15 @@
   const SECRET       = "6838d77aed4681a5";
 
   const RAW_BASE = `https://gist.githubusercontent.com/${GIST_USER}/${GIST_ID}/raw`;
-  const SESSION_URL_FILE = "session-url.txt";
-  const APPS_FILE        = "apps.json";
+  const SESSION_URL_FILE  = "session-url.txt";
+  const SESSION_NAME_FILE = "session-name.txt";
+  const APPS_FILE         = "apps.json";
 
   // ── State ─────────────────────────────────────────────────────────────────
   let currentSessionUrl  = null;
+  let currentSessionName = null;
   let sessionFetchedAt   = null;
+  let lastApps           = null;
   let waitingForSession  = false;
   let waitingTimeout     = null;
   let sessionPollTimer   = null;
@@ -430,8 +454,12 @@
     }
 
     const age = sessionFetchedAt ? `<span class="session-age">${relativeTime(sessionFetchedAt)}</span>` : "";
+    const nameHtml = currentSessionName
+      ? `<div class="session-app-name">${escapeHtml(currentSessionName)}</div>`
+      : "";
 
     sessionContent.innerHTML = `
+      ${nameHtml}
       <a class="session-url-link" href="${currentSessionUrl}" id="sessionLink">${currentSessionUrl}</a>
       <div class="session-actions">
         <button class="btn-sm btn-copy" id="btnCopy">Copy</button>
@@ -465,21 +493,30 @@
   // ── Session fetching ──────────────────────────────────────────────────────
   async function fetchSession() {
     try {
-      const res = await fetch(bust(`${RAW_BASE}/${SESSION_URL_FILE}`), { cache: "no-store" });
-      if (!res.ok) return;
-      const url = (await res.text()).trim();
+      const [urlRes, nameRes] = await Promise.all([
+        fetch(bust(`${RAW_BASE}/${SESSION_URL_FILE}`), { cache: "no-store" }),
+        fetch(bust(`${RAW_BASE}/${SESSION_NAME_FILE}`), { cache: "no-store" }),
+      ]);
+
+      if (!urlRes.ok) return;
+      const url = (await urlRes.text()).trim();
       if (!url) return;
+
+      if (nameRes.ok) {
+        const name = (await nameRes.text()).trim();
+        if (name) currentSessionName = name;
+      }
 
       const isNew = url !== currentSessionUrl;
       currentSessionUrl = url;
       sessionFetchedAt  = new Date();
 
       if (isNew && waitingForSession) {
-        // Got a new URL after launch — stop waiting
         clearWaiting();
       }
 
       renderSession();
+      if (lastApps) renderApps(lastApps); // refresh active card highlight
     } catch (_) { /* network error — ignore */ }
   }
 
@@ -519,6 +556,7 @@
         return;
       }
       const apps = await res.json();
+      lastApps = apps;
       renderApps(apps);
     } catch (e) {
       appsGrid.innerHTML = `<div class="state-message">Failed to load apps: ${e.message}</div>`;
@@ -537,23 +575,20 @@
       const statusDot = `<span class="app-status-dot ${app.status || 'active'}"></span>`;
       const star = app.favorite ? `<span class="app-star">★</span>` : "";
       const statusText = app.status ? app.status.charAt(0).toUpperCase() + app.status.slice(1) : "Active";
+      const isActive = currentSessionName && app.name === currentSessionName && currentSessionUrl;
+      const btn = isActive
+        ? `<a class="btn-launch btn-open-session" href="${currentSessionUrl}">Open Session ↗</a>`
+        : `<button class="btn-launch" disabled title="No active session">No Session</button>`;
 
       return `
-        <div class="app-card" id="card-${app.id}">
+        <div class="app-card${isActive ? ' card-active' : ''}" id="card-${app.id}">
           ${star}
           <div class="app-name">${escapeHtml(app.name)}</div>
           <div class="app-status">${statusDot} ${statusText}</div>
-          <div class="launch-status" id="ls-${app.id}"></div>
-          <button class="btn-launch" data-id="${app.id}" data-name="${escapeHtml(app.name)}">
-            Launch
-          </button>
+          ${btn}
         </div>
       `;
     }).join("");
-
-    document.querySelectorAll(".btn-launch").forEach(btn => {
-      btn.addEventListener("click", () => handleLaunch(btn));
-    });
   }
 
   function escapeHtml(str) {
