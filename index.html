@@ -572,19 +572,16 @@
 
     appsLabel.style.display = "";
     appsGrid.innerHTML = apps.map(app => {
-      const statusDot = `<span class="app-status-dot ${app.status || 'active'}"></span>`;
       const star = app.favorite ? `<span class="app-star">★</span>` : "";
-      const statusText = app.status ? app.status.charAt(0).toUpperCase() + app.status.slice(1) : "Active";
       const isActive = currentSessionName && app.name === currentSessionName && currentSessionUrl;
       const btn = isActive
         ? `<a class="btn-launch btn-open-session" href="${currentSessionUrl}">Open Session ↗</a>`
-        : `<button class="btn-launch" disabled title="No active session">No Session</button>`;
+        : `<button class="btn-launch" disabled>No Session</button>`;
 
       return `
         <div class="app-card${isActive ? ' card-active' : ''}" id="card-${app.id}">
           ${star}
           <div class="app-name">${escapeHtml(app.name)}</div>
-          <div class="app-status">${statusDot} ${statusText}</div>
           ${btn}
         </div>
       `;
