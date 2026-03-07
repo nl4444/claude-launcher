@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Claude Launcher</title>
+  <style>
+    :root {
+      --bg: #0d0d0f;
+      --surface: #1a1a1f;
+      --surface2: #24242b;
+      --border: #2e2e38;
+      --accent: #7c6af7;
+      --accent-dim: #4a4270;
+      --text: #e8e8f0;
+      --text-dim: #888899;
+      --green: #4caf7d;
+      --red: #e05c5c;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    header {
+      padding: 18px 16px 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    header .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ── Session bar ── */
+    .session-bar {
+      margin: 0 12px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+
+    .session-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .session-url-link {
+      display: block;
+      font-size: 14px;
+      color: var(--accent);
+      text-decoration: none;
+      word-break: break-all;
+      margin-bottom: 10px;
+    }
+
+    .session-url-link:active { opacity: 0.7; }
+
+    .session-no-url {
+      font-size: 14px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+
+    .session-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn-sm {
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .btn-sm:active { opacity: 0.7; }
+
+    .btn-copy {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-open {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .session-age {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    /* Waiting indicator */
+    .session-waiting {
+      display: none;
+      font-size: 12px;
+      color: var(--accent);
+      margin-top: 8px;
+    }
+
+    .session-waiting.active { display: flex; align-items: center; gap: 6px; }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--accent-dim);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── App grid ── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+      padding: 0 16px;
+      margin-bottom: 8px;
+    }
+
+    .apps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      padding: 0 12px 32px;
+    }
+
+    .app-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    .app-card.launching {
+      border-color: var(--accent-dim);
+    }
+
+    .app-star {
+      position: absolute;
+      top: 10px; right: 10px;
+      font-size: 13px;
+      color: #f0b429;
+    }
+
+    .app-name {
+      font-size: 15px;
+      font-weight: 600;
+      padding-right: 18px;
+      line-height: 1.2;
+    }
+
+    .app-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .app-status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+    }
+
+    .app-status-dot.active { background: var(--green); }
+    .app-status-dot.paused { background: #f0b429; }
+    .app-status-dot.idea   { background: var(--text-dim); }
+
+    .btn-launch {
+      margin-top: auto;
+      width: 100%;
+      padding: 9px 0;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      transition: opacity 0.15s, background 0.15s;
+    }
+
+    .btn-launch:disabled {
+      background: var(--accent-dim);
+      cursor: default;
+    }
+
+    .btn-launch:not(:disabled):active { opacity: 0.75; }
+
+    /* Launch state */
+    .launch-status {
+      font-size: 11px;
+      color: var(--accent);
+      text-align: center;
+      min-height: 16px;
+    }
+
+    /* Empty / error states */
+    .state-message {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+
+    .copy-toast {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 40px;
+      font-size: 14px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s;
+      z-index: 100;
+    }
+
+    .copy-toast.visible { opacity: 1; }
+
+    /* ── PIN overlay ── */
+    #pinOverlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+
+    .pin-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 240px;
+    }
+
+    .pin-box h2 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+
+    #pinInput {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 8px;
+      text-align: center;
+      outline: none;
+    }
+
+    #pinInput:focus { border-color: var(--accent); }
+
+    #pinSubmit {
+      width: 100%;
+      padding: 12px 0;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      transition: opacity 0.15s;
+    }
+
+    #pinSubmit:active { opacity: 0.75; }
+
+    #pinError {
+      font-size: 13px;
+      color: var(--red);
+      display: none;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-8px); }
+      40%, 80% { transform: translateX(8px); }
+    }
+
+    .pin-shake { animation: shake 0.35s ease; }
+  </style>
+</head>
+<body>
+
+<!-- PIN overlay -->
+<div id="pinOverlay">
+  <div class="pin-box">
+    <h2>Claude Launcher</h2>
+    <input type="password" inputmode="numeric" maxlength="6" id="pinInput" placeholder="••••" autofocus />
+    <button id="pinSubmit" onclick="checkPin()">Unlock</button>
+    <div id="pinError">Wrong PIN — try again</div>
+  </div>
+</div>
+
+<header>
+  <div class="dot"></div>
+  <h1>Claude Launcher</h1>
+</header>
+
+<!-- Session bar -->
+<div class="session-bar">
+  <div class="session-label">Active Session</div>
+  <div id="sessionContent">
+    <div class="session-no-url">Loading…</div>
+  </div>
+  <div class="session-waiting" id="sessionWaiting">
+    <div class="spinner"></div>
+    <span>Waiting for new session URL…</span>
+  </div>
+</div>
+
+<!-- App list -->
+<div class="section-label" id="appsLabel" style="display:none">Apps</div>
+<div class="apps-grid" id="appsGrid">
+  <div class="state-message">Loading apps…</div>
+</div>
+
+<div class="copy-toast" id="copyToast">Copied!</div>
+
+<script>
+  // ── Configuration (baked in at deploy time) ──────────────────────────────
+  const GIST_USER    = "nl4444";
+  const GIST_ID      = "84420b55ed8c8eed82660b5a3803b271";
+  const NTFY_TOPIC   = "";   // ← set this before deploying, e.g. "claude-launcher-a7f2c3d9"
+  const SECRET       = "";   // ← set this before deploying, e.g. "deadbeef12345678"
+
+  const RAW_BASE = `https://gist.githubusercontent.com/${GIST_USER}/${GIST_ID}/raw`;
+  const SESSION_URL_FILE = "session-url.txt";
+  const APPS_FILE        = "apps.json";
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let currentSessionUrl  = null;
+  let sessionFetchedAt   = null;
+  let waitingForSession  = false;
+  let waitingTimeout     = null;
+  let sessionPollTimer   = null;
+
+  // ── DOM refs ──────────────────────────────────────────────────────────────
+  const sessionContent = document.getElementById("sessionContent");
+  const sessionWaiting = document.getElementById("sessionWaiting");
+  const appsGrid       = document.getElementById("appsGrid");
+  const appsLabel      = document.getElementById("appsLabel");
+  const copyToast      = document.getElementById("copyToast");
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  function bust(url) {
+    return `${url}?_=${Date.now()}`;
+  }
+
+  function relativeTime(date) {
+    if (!date) return "";
+    const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (diff < 5)  return "just now";
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    return `${Math.floor(diff / 3600)}h ago`;
+  }
+
+  function showToast(msg) {
+    copyToast.textContent = msg;
+    copyToast.classList.add("visible");
+    setTimeout(() => copyToast.classList.remove("visible"), 1800);
+  }
+
+  // ── Session rendering ─────────────────────────────────────────────────────
+  function renderSession() {
+    if (!currentSessionUrl) {
+      sessionContent.innerHTML = `<div class="session-no-url">No active session</div>`;
+      return;
+    }
+
+    const age = sessionFetchedAt ? `<span class="session-age">${relativeTime(sessionFetchedAt)}</span>` : "";
+
+    sessionContent.innerHTML = `
+      <a class="session-url-link" href="${currentSessionUrl}" id="sessionLink">${currentSessionUrl}</a>
+      <div class="session-actions">
+        <button class="btn-sm btn-copy" id="btnCopy">Copy</button>
+        <a class="btn-sm btn-open" href="${currentSessionUrl}" id="btnOpen">Open in Claude ↗</a>
+        ${age}
+      </div>
+    `;
+
+    document.getElementById("btnCopy").addEventListener("click", () => {
+      navigator.clipboard.writeText(currentSessionUrl).then(() => showToast("Copied!")).catch(() => {
+        // Fallback for older iOS
+        const ta = document.createElement("textarea");
+        ta.value = currentSessionUrl;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        showToast("Copied!");
+      });
+    });
+  }
+
+  // age updater
+  setInterval(() => {
+    if (currentSessionUrl) {
+      const el = document.querySelector(".session-age");
+      if (el) el.textContent = relativeTime(sessionFetchedAt);
+    }
+  }, 10_000);
+
+  // ── Session fetching ──────────────────────────────────────────────────────
+  async function fetchSession() {
+    try {
+      const res = await fetch(bust(`${RAW_BASE}/${SESSION_URL_FILE}`), { cache: "no-store" });
+      if (!res.ok) return;
+      const url = (await res.text()).trim();
+      if (!url) return;
+
+      const isNew = url !== currentSessionUrl;
+      currentSessionUrl = url;
+      sessionFetchedAt  = new Date();
+
+      if (isNew && waitingForSession) {
+        // Got a new URL after launch — stop waiting
+        clearWaiting();
+      }
+
+      renderSession();
+    } catch (_) { /* network error — ignore */ }
+  }
+
+  function startSessionPolling() {
+    clearInterval(sessionPollTimer);
+    sessionPollTimer = setInterval(fetchSession, 4_000);
+    fetchSession();
+  }
+
+  // ── Waiting state (after Launch tap) ─────────────────────────────────────
+  function startWaiting(appCard) {
+    waitingForSession = true;
+    sessionWaiting.classList.add("active");
+
+    // Auto-clear after 30s
+    waitingTimeout = setTimeout(() => clearWaiting(), 30_000);
+
+    // Poll every 1.5s while waiting
+    clearInterval(sessionPollTimer);
+    sessionPollTimer = setInterval(fetchSession, 1_500);
+  }
+
+  function clearWaiting() {
+    waitingForSession = false;
+    sessionWaiting.classList.remove("active");
+    clearTimeout(waitingTimeout);
+    // Return to normal polling
+    startSessionPolling();
+  }
+
+  // ── App list ──────────────────────────────────────────────────────────────
+  async function fetchApps() {
+    try {
+      const res = await fetch(bust(`${RAW_BASE}/${APPS_FILE}`), { cache: "no-store" });
+      if (!res.ok) {
+        appsGrid.innerHTML = `<div class="state-message">apps.json not found in Gist.<br>Run export-apps.sh first.</div>`;
+        return;
+      }
+      const apps = await res.json();
+      renderApps(apps);
+    } catch (e) {
+      appsGrid.innerHTML = `<div class="state-message">Failed to load apps: ${e.message}</div>`;
+    }
+  }
+
+  function renderApps(apps) {
+    if (!apps.length) {
+      appsLabel.style.display = "none";
+      appsGrid.innerHTML = `<div class="state-message">No Claude Code apps found.<br>Enable Claude Code in App Manager, then run export-apps.sh.</div>`;
+      return;
+    }
+
+    appsLabel.style.display = "";
+    appsGrid.innerHTML = apps.map(app => {
+      const statusDot = `<span class="app-status-dot ${app.status || 'active'}"></span>`;
+      const star = app.favorite ? `<span class="app-star">★</span>` : "";
+      const statusText = app.status ? app.status.charAt(0).toUpperCase() + app.status.slice(1) : "Active";
+
+      return `
+        <div class="app-card" id="card-${app.id}">
+          ${star}
+          <div class="app-name">${escapeHtml(app.name)}</div>
+          <div class="app-status">${statusDot} ${statusText}</div>
+          <div class="launch-status" id="ls-${app.id}"></div>
+          <button class="btn-launch" data-id="${app.id}" data-name="${escapeHtml(app.name)}">
+            Launch
+          </button>
+        </div>
+      `;
+    }).join("");
+
+    document.querySelectorAll(".btn-launch").forEach(btn => {
+      btn.addEventListener("click", () => handleLaunch(btn));
+    });
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ── Launch ────────────────────────────────────────────────────────────────
+  async function handleLaunch(btn) {
+    if (!NTFY_TOPIC || !SECRET) {
+      alert("NTFY_TOPIC and SECRET are not configured in this launcher.\nEdit launcher.html and set them before deploying.");
+      return;
+    }
+
+    const appId   = btn.dataset.id;
+    const appName = btn.dataset.name;
+    const card    = document.getElementById(`card-${appId}`);
+    const ls      = document.getElementById(`ls-${appId}`);
+
+    btn.disabled  = true;
+    card.classList.add("launching");
+    ls.textContent = "Sending…";
+
+    const body = `${SECRET}:${appId}`;
+
+    try {
+      const res = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain",
+          "Title": `Launch: ${appName}`,
+        },
+        body,
+      });
+
+      if (res.ok) {
+        ls.textContent = "Sent ✓ — waiting…";
+        startWaiting(card);
+      } else {
+        ls.textContent = `Error ${res.status}`;
+      }
+    } catch (e) {
+      ls.textContent = `Network error`;
+    }
+
+    // Re-enable button after 5s regardless
+    setTimeout(() => {
+      btn.disabled = false;
+      card.classList.remove("launching");
+      if (!waitingForSession) ls.textContent = "";
+    }, 5_000);
+  }
+
+  // ── PIN Gate ──────────────────────────────────────────────────────────────
+  const PIN_HASH = "75567d38a76f47b166203e501c6faf4cb513e049bb5169a1f65b0084d1067cfc";
+
+  async function checkPin() {
+    const pin = document.getElementById("pinInput").value.trim();
+    if (!pin) return;
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pin));
+    const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    if (hex === PIN_HASH) {
+      sessionStorage.setItem("unlocked", "1");
+      document.getElementById("pinOverlay").remove();
+      startSessionPolling();
+      fetchApps();
+    } else {
+      const box = document.querySelector(".pin-box");
+      const err = document.getElementById("pinError");
+      err.style.display = "block";
+      box.classList.remove("pin-shake");
+      void box.offsetWidth; // reflow to restart animation
+      box.classList.add("pin-shake");
+      document.getElementById("pinInput").value = "";
+      document.getElementById("pinInput").focus();
+    }
+  }
+
+  // Allow pressing Enter in PIN field
+  document.getElementById("pinInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") checkPin();
+  });
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  if (sessionStorage.getItem("unlocked") === "1") {
+    document.getElementById("pinOverlay").remove();
+    startSessionPolling();
+    fetchApps();
+  }
+  // else: wait for PIN — polling starts only after unlock
+</script>
+</body>
+</html>
