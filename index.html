@@ -59,9 +59,38 @@
       margin: 0 12px 14px;
       background: var(--surface);
       border: 1px solid var(--border);
+      border-left-width: 4px;
       border-radius: var(--radius);
       padding: 14px 16px;
+      transition: border-color 0.3s;
     }
+
+    .session-bar.state-active { border-left-color: var(--green); }
+    .session-bar.state-idle   { border-left-color: #f0b429; }
+    .session-bar.state-ended,
+    .session-bar.state-none   { border-left-color: var(--border); }
+
+    .session-state-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin-bottom: 6px;
+    }
+
+    .session-state-badge .badge-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .state-active .badge-dot { background: var(--green); }
+    .state-idle   .badge-dot { background: #f0b429; }
+    .state-ended  .badge-dot,
+    .state-none   .badge-dot { background: var(--text-dim); }
 
     .session-label {
       font-size: 11px;
@@ -247,8 +276,70 @@
       background: var(--green);
     }
 
-    .card-active {
-      border-color: var(--green);
+    .card-active { border-color: var(--green); }
+    .card-idle   { border-color: #f0b429; }
+
+    /* ── Summary panel ── */
+    .btn-summary {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 2px 0;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .btn-summary:active { opacity: 0.6; }
+
+    .summary-panel {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      margin-top: 2px;
+    }
+
+    .summary-panel.open { display: block; }
+
+    .summary-text {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+
+    .summary-next-steps {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .summary-next-steps li {
+      font-size: 11px;
+      color: var(--text);
+      padding-left: 12px;
+      position: relative;
+      line-height: 1.4;
+    }
+
+    .summary-next-steps li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+
+    .summary-updated {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 6px;
+      opacity: 0.7;
     }
 
     /* Launch state */
@@ -408,15 +499,33 @@
   const RAW_BASE = `https://gist.githubusercontent.com/${GIST_USER}/${GIST_ID}/raw`;
   const SESSION_URL_FILE  = "session-url.txt";
   const SESSION_NAME_FILE = "session-name.txt";
+  const SESSION_PING_FILE = "session-ping.txt";
   const APPS_FILE         = "apps.json";
+  const SUMMARIES_FILE    = "summaries.json";
+
+  // Session staleness thresholds (minutes)
+  const IDLE_THRESHOLD  = 20;   // > 20 min → Idle
+  const ENDED_THRESHOLD = 480;  // > 8 hr  → treat as Ended
 
   // ── State ─────────────────────────────────────────────────────────────────
   let currentSessionUrl  = null;
   let currentSessionName = null;
+  let currentSessionPing = null;  // Date object of last ping
   let sessionFetchedAt   = null;
   let lastApps           = null;
+  let summaries          = {};
   let waitingForSession  = false;
   let waitingTimeout     = null;
+
+  // Returns "active" | "idle" | "ended" | "none"
+  function getSessionState() {
+    if (!currentSessionUrl) return "none";
+    if (!currentSessionPing) return "idle";
+    const ageMin = (Date.now() - currentSessionPing.getTime()) / 60000;
+    if (ageMin > ENDED_THRESHOLD) return "ended";
+    if (ageMin > IDLE_THRESHOLD)  return "idle";
+    return "active";
+  }
   let sessionPollTimer   = null;
 
   // ── DOM refs ──────────────────────────────────────────────────────────────
@@ -448,23 +557,33 @@
 
   // ── Session rendering ─────────────────────────────────────────────────────
   function renderSession() {
-    if (!currentSessionUrl) {
+    const bar = document.querySelector(".session-bar");
+    const state = getSessionState();
+    const ageMin = currentSessionPing ? (Date.now() - currentSessionPing.getTime()) / 60000 : null;
+
+    // Update bar state class
+    bar.className = `session-bar state-${state}`;
+
+    if (state === "none" || state === "ended") {
       sessionContent.innerHTML = `<div class="session-no-url">No active session</div>`;
+      const badge = document.querySelector(".session-label");
+      if (badge) badge.innerHTML = `<span class="session-state-badge"><span class="badge-dot"></span>No Session</span>`;
       return;
     }
 
-    const age = sessionFetchedAt ? `<span class="session-age">${relativeTime(sessionFetchedAt)}</span>` : "";
+    const stateText = state === "active" ? "Active" : `Idle · ${Math.round(ageMin)}m ago`;
     const nameHtml = currentSessionName
       ? `<div class="session-app-name">${escapeHtml(currentSessionName)}</div>`
       : "";
+    const openBtnColor = state === "idle" ? "background:#f0b429;color:#000" : "";
 
     sessionContent.innerHTML = `
       ${nameHtml}
       <a class="session-url-link" href="${currentSessionUrl}" id="sessionLink">${currentSessionUrl}</a>
       <div class="session-actions">
         <button class="btn-sm btn-copy" id="btnCopy">Copy</button>
-        <a class="btn-sm btn-open" href="${currentSessionUrl}" id="btnOpen">Open in Claude ↗</a>
-        ${age}
+        <a class="btn-sm btn-open" href="${currentSessionUrl}" id="btnOpen" style="${openBtnColor}">Open in Claude ↗</a>
+        <span class="session-age">${stateText}</span>
       </div>
     `;
 
@@ -482,29 +601,47 @@
     });
   }
 
-  // age updater
+  // Re-render session state every 60s so Idle timer and state transitions update live
   setInterval(() => {
     if (currentSessionUrl) {
-      const el = document.querySelector(".session-age");
-      if (el) el.textContent = relativeTime(sessionFetchedAt);
+      renderSession();
+      if (lastApps) renderApps(lastApps);
     }
-  }, 10_000);
+  }, 60_000);
 
   // ── Session fetching ──────────────────────────────────────────────────────
   async function fetchSession() {
     try {
-      const [urlRes, nameRes] = await Promise.all([
+      const [urlRes, nameRes, pingRes] = await Promise.all([
         fetch(bust(`${RAW_BASE}/${SESSION_URL_FILE}`), { cache: "no-store" }),
         fetch(bust(`${RAW_BASE}/${SESSION_NAME_FILE}`), { cache: "no-store" }),
+        fetch(bust(`${RAW_BASE}/${SESSION_PING_FILE}`), { cache: "no-store" }),
       ]);
 
       if (!urlRes.ok) return;
       const url = (await urlRes.text()).trim();
-      if (!url) return;
+
+      // Empty URL means session was cleared (Stop hook or session-end.sh ran)
+      if (!url) {
+        currentSessionUrl  = null;
+        currentSessionName = null;
+        currentSessionPing = null;
+        renderSession();
+        if (lastApps) renderApps(lastApps);
+        return;
+      }
 
       if (nameRes.ok) {
         const name = (await nameRes.text()).trim();
         if (name) currentSessionName = name;
+      }
+
+      if (pingRes.ok) {
+        const pingStr = (await pingRes.text()).trim();
+        if (pingStr) {
+          const parsed = new Date(pingStr);
+          if (!isNaN(parsed)) currentSessionPing = parsed;
+        }
       }
 
       const isNew = url !== currentSessionUrl;
@@ -550,12 +687,21 @@
   // ── App list ──────────────────────────────────────────────────────────────
   async function fetchApps() {
     try {
-      const res = await fetch(bust(`${RAW_BASE}/${APPS_FILE}`), { cache: "no-store" });
-      if (!res.ok) {
+      const [appsRes, summariesRes] = await Promise.all([
+        fetch(bust(`${RAW_BASE}/${APPS_FILE}`), { cache: "no-store" }),
+        fetch(bust(`${RAW_BASE}/${SUMMARIES_FILE}`), { cache: "no-store" }),
+      ]);
+
+      if (!appsRes.ok) {
         appsGrid.innerHTML = `<div class="state-message">apps.json not found in Gist.<br>Run export-apps.sh first.</div>`;
         return;
       }
-      const apps = await res.json();
+
+      if (summariesRes.ok) {
+        try { summaries = await summariesRes.json(); } catch (_) {}
+      }
+
+      const apps = await appsRes.json();
       lastApps = apps;
       renderApps(apps);
     } catch (e) {
@@ -573,19 +719,53 @@
     appsLabel.style.display = "";
     appsGrid.innerHTML = apps.map(app => {
       const star = app.favorite ? `<span class="app-star">★</span>` : "";
-      const isActive = currentSessionName && app.name === currentSessionName && currentSessionUrl;
-      const btn = isActive
-        ? `<a class="btn-launch btn-open-session" href="${currentSessionUrl}">Open Session ↗</a>`
-        : `<button class="btn-launch" disabled>No Session</button>`;
+      const normStr = s => s.replace(/[\u2018\u2019\u201A\u201B]/g, "'").toLowerCase().trim();
+      const state = getSessionState();
+      const isMatchingSession = currentSessionName &&
+        normStr(app.name) === normStr(currentSessionName) &&
+        currentSessionUrl &&
+        state !== "none" && state !== "ended";
+
+      let btn;
+      if (isMatchingSession && state === "active") {
+        btn = `<a class="btn-launch btn-open-session" href="${currentSessionUrl}">Open Session ↗</a>`;
+      } else if (isMatchingSession && state === "idle") {
+        btn = `<a class="btn-launch btn-open-session" href="${currentSessionUrl}" style="background:#f0b429;color:#000">Open Session ↗ <span style="font-size:10px;opacity:0.8">(idle)</span></a>`;
+      } else {
+        btn = `<button class="btn-launch" disabled>No Session</button>`;
+      }
+
+      const s = summaries[app.id];
+      const summaryPanel = s ? `
+        <button class="btn-summary" onclick="toggleSummary('${app.id}')">
+          <span id="chevron-${app.id}">▸</span> Details
+        </button>
+        <div class="summary-panel" id="summary-${app.id}">
+          <div class="summary-text">${escapeHtml(s.summary || "")}</div>
+          ${s.nextSteps && s.nextSteps.length ? `
+            <ul class="summary-next-steps">
+              ${s.nextSteps.map(step => `<li>${escapeHtml(step)}</li>`).join("")}
+            </ul>` : ""}
+          ${s.updated ? `<div class="summary-updated">Updated ${s.updated}</div>` : ""}
+        </div>` : "";
 
       return `
-        <div class="app-card${isActive ? ' card-active' : ''}" id="card-${app.id}">
+        <div class="app-card${isMatchingSession ? (state === 'idle' ? ' card-idle' : ' card-active') : ''}" id="card-${app.id}">
           ${star}
           <div class="app-name">${escapeHtml(app.name)}</div>
+          ${summaryPanel}
           ${btn}
         </div>
       `;
     }).join("");
+  }
+
+  function toggleSummary(id) {
+    const panel = document.getElementById(`summary-${id}`);
+    const chevron = document.getElementById(`chevron-${id}`);
+    if (!panel) return;
+    const open = panel.classList.toggle("open");
+    chevron.textContent = open ? "▾" : "▸";
   }
 
   function escapeHtml(str) {
