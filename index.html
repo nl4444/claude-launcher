@@ -466,7 +466,7 @@
   const SUMMARIES_FILE = "summaries.json";
 
   // Session staleness thresholds (minutes)
-  const IDLE_THRESHOLD  = 20;   // > 20 min → Idle
+  const IDLE_THRESHOLD  = 120;  // > 2 hr  → Idle
   const ENDED_THRESHOLD = 480;  // > 8 hr  → treat as stale/ended
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -567,12 +567,11 @@
       const res = await fetch(bust(`${RAW_BASE}/${SESSIONS_FILE}`), { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        sessions = data || {};
-      } else {
-        sessions = {};
+        if (data && typeof data === "object") sessions = data;
+        // On error/non-OK: keep existing sessions (don't wipe on transient failures)
       }
     } catch (_) {
-      sessions = {};
+      // Keep existing sessions on network error
     }
     // First fetch done — resolve checking state
     isInitialLoad = false;
